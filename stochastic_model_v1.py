@@ -26,7 +26,7 @@ def fit_cubic_minimum(x, y, plot=False):
             if x_min <= point <= x_max:
                 candidates.append(point)
 
-    candidates.extend([x_min, x_max])
+    #candidates.extend([x_min, x_max]) #include endpoints in case the minimum is at the boundary
 
     values = [cubic(point) for point in candidates]
     best_idx = int(np.argmin(values))
@@ -88,7 +88,7 @@ class double_well_1:
         return volume
     
     def xlim(self):
-        return -3*self.stdev()
+        return -np.sqrt(self.B)
 
 
 def simulate(system, T, sigma, omega, deltaT, x, nrounds, threshold, plot=False):
@@ -101,13 +101,15 @@ def simulate(system, T, sigma, omega, deltaT, x, nrounds, threshold, plot=False)
 
     #simulate
 
-    well_vol = system.well_volume(x)
+    #well_vol = system.well_volume(x)
     #print(f"well volume = {well_vol}")
 
     #plt.ylim(-30,50)
 
     lim_ind = np.where(x>system.xlim())[0][0]
-
+    # print(np.where(x>system.xlim()))
+    # print(lim_ind)
+    
     F = system.f1(x)
     V = np.zeros(len(F))
 
@@ -115,7 +117,7 @@ def simulate(system, T, sigma, omega, deltaT, x, nrounds, threshold, plot=False)
 
     #nrounds = 20*round(well_vol/omega)
     #nrounds = 99999
-    conv = False
+    #conv = False
     #print(f"{nrounds} rounds")
     for t in range(nrounds):
         #for an even number of frames the convolution is shifted off by half a bin. 
@@ -154,6 +156,7 @@ def simulate(system, T, sigma, omega, deltaT, x, nrounds, threshold, plot=False)
             plt.plot(x[lim_ind:-lim_ind], F_norm, color="black", linestyle="dashed")
         plt.xlabel("x")
         plt.ylabel("Free energy")
+        plt.ylim(-10,10)
         plt.show()
 
         plt.plot(rmse)
