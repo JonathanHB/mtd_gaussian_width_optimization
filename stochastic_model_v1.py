@@ -1,8 +1,9 @@
 import numpy as np
-from scipy.stats import norm
 import matplotlib.pyplot as plt
+import numba
+from numba import njit
 import time
-import sys
+from scipy.stats import norm
 
 
 #written by copilot
@@ -38,8 +39,9 @@ def fit_cubic_minimum(x, y, plot=False):
             point = float(np.real(point))
             if x_min <= point <= x_max:
                 candidates.append(point)
-
-    #candidates.extend([x_min, x_max]) #include endpoints in case the minimum is at the boundary
+    
+    if len(candidates) == 0:
+        candidates.extend([x_min, x_max]) #include endpoints in case the minimum is at the boundary
 
     values = [cubic(point) for point in candidates]
     best_idx = int(np.argmin(values))
@@ -150,7 +152,114 @@ class double_well_1:
         return -np.sqrt(self.B)
 
 
+@njit
+def _weighted_choice(weights):
+    n = weights.shape[0]
+    cumsum = np.empty(n, dtype=np.float64)
+    total = 0.0
+    for i in range(n):
+        total += weights[i]
+        cumsum[i] = total
+    if total <= 0.0:
+        return 0
+    r = np.random.random() * total
+    for i in range(n):
+        if r < cumsum[i]:
+            return i
+    return n - 1
+
+
+@njit
+def _simulate_numba_core(F, x, V, T, sigma, omega, deltaT, lim_ind, nrounds, F_norm):
+    npts = x.shape[0]
+    mse = np.empty(nrounds, dtype=np.float64)
+    gaussian = np.empty(npts, dtype=np.float64)
+    exp_term = np.empty(npts, dtype=np.float64)
+
+    for t in range(nrounds):
+        total = 0.0
+        for i in range(npts):
+            exp_term[i] = np.exp(-(F[i] + V[i]) / T)
+            total += exp_term[i]
+        if total == 0.0:
+            total = 1.0
+        for i in range(npts):
+            exp_term[i] /= total
+
+        bin_idx = _weighted_choice(exp_term)
+
+        factor = np.exp(-V[bin_idx] / deltaT)
+        gaussian_sum = 0.0
+        for i in range(npts):
+            dx = x[i] - x[bin_idx]
+            gaussian[i] = np.exp(-0.5 * (dx / sigma) ** 2) #can this be factored out and then accessed via array indexing?
+            gaussian_sum += gaussian[i]
+        if gaussian_sum == 0.0:
+            gaussian_sum = 1.0
+        for i in range(npts):
+            V[i] += omega * factor * gaussian[i] / gaussian_sum
+
+        log_norm = 0.0
+        for i in range(lim_ind, npts - lim_ind):
+            fV_val = -V[i] * (T + deltaT) / deltaT
+            log_norm += np.exp(-fV_val / T)
+        if log_norm == 0.0:
+            log_norm = 1.0
+        log_norm = T * np.log(log_norm)
+
+        n_slice = npts - 2 * lim_ind
+        mse_val = 0.0
+        for idx in range(n_slice):
+            i = lim_ind + idx
+            fV_norm = -V[i] * (T + deltaT) / deltaT + log_norm
+            diff = F_norm[idx] - fV_norm
+            mse_val += diff * diff
+        mse[t] = mse_val / n_slice
+
+    return mse, V
+
+
 def simulate(system, T, sigma, omega, deltaT, x, nrounds, threshold, plot=False):
+
+    plot_mode = "a"
+    npts = len(x)
+
+    lim_ind = np.where(x > system.xlim())[0][0]
+
+    F = system.f1(x)
+    F_norm = F[lim_ind:-lim_ind] + T * np.log(np.sum(np.exp(-F[lim_ind:-lim_ind] / T)))
+    V = np.zeros(npts)
+
+    mse, V = _simulate_numba_core(F, x, V, T, sigma, omega, deltaT, lim_ind, nrounds, F_norm)
+
+    rmse = np.sqrt(mse)
+
+    if plot:
+        if plot_mode == "a":
+            plt.plot(x, F, color="black")
+            #fV_val = -V * (T + deltaT) / deltaT
+            #log_norm += np.exp(-fV_val / T)
+            plt.plot(x, F+V*(T+deltaT)/deltaT, color="lime")
+            plt.axvline(x[lim_ind], linestyle="dotted", color="green")
+        else:
+            plt.plot(x[lim_ind:-lim_ind], F_norm, color="black", linestyle="dashed")
+        plt.xlabel("x")
+        plt.ylabel("Free energy")
+        plt.ylim(-10, 15)
+        plt.show()
+
+        plt.plot(rmse)
+        plt.ylim(0, max(rmse))
+        plt.xlabel("Number of independent gaussians deposited")
+        plt.ylabel("RMSE")
+        plt.show()
+
+    return rmse, nrounds - 1, nrounds
+
+
+
+#do not use this method; it is retained as a reference and is a slower version of copilot-refactored simulate()
+def simulate_old(system, T, sigma, omega, deltaT, x, nrounds, threshold, plot=False):
 
     t01 = time.time()
 
@@ -239,7 +348,8 @@ def simulate(system, T, sigma, omega, deltaT, x, nrounds, threshold, plot=False)
         #print("simulation round: ", t2-t1)
         
         if plot:
-            if t%int(nrounds/100)==0:
+            if t==nrounds-1:#t%int(nrounds/100)==0:
+                print(f"round {t}")
                 if plot_mode=="a":
                     plt.plot(x, F+V*(T+deltaT)/deltaT, color=(t/nrounds,0.8,0))
                 else:
@@ -261,7 +371,7 @@ def simulate(system, T, sigma, omega, deltaT, x, nrounds, threshold, plot=False)
             plt.plot(x[lim_ind:-lim_ind], F_norm, color="black", linestyle="dashed")
         plt.xlabel("x")
         plt.ylabel("Free energy")
-        plt.ylim(-10,10)
+        plt.ylim(-10,15)
         plt.show()
 
         plt.plot(rmse)
