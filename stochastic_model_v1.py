@@ -236,16 +236,21 @@ def simulate(system, T, sigma, omega, deltaT, x, nrounds, threshold, plot=False)
 
     if plot:
         if plot_mode == "a":
-            plt.plot(x, F, color="black")
+            plt.plot(x, F, color="black", label="G(x)")
             #fV_val = -V * (T + deltaT) / deltaT
             #log_norm += np.exp(-fV_val / T)
-            plt.plot(x, F+V*(T+deltaT)/deltaT, color="lime")
-            plt.axvline(x[lim_ind], linestyle="dotted", color="green")
+            plt.plot(x, F+V*(T+deltaT)/deltaT, color="lime", label="G(x)+V(x)")
+            #plt.axvline(x[lim_ind], linestyle="dotted", color="green")
         else:
             plt.plot(x[lim_ind:-lim_ind], F_norm, color="black", linestyle="dashed")
+
         plt.xlabel("x")
         plt.ylabel("Free energy")
-        plt.ylim(-10, 15)
+        plt.xlim(x[lim_ind], x[-lim_ind])
+        plt.ylim(-5, 15)
+        plt.legend()
+        plt.title(f"n_gaussians={nrounds}, sigma={sigma}")
+        plt.savefig(f"figures/error_vs_sigma_ngaussians={nrounds}_sigma={sigma}.png")
         plt.show()
 
         plt.plot(rmse)
@@ -348,7 +353,7 @@ def simulate_old(system, T, sigma, omega, deltaT, x, nrounds, threshold, plot=Fa
         #print("simulation round: ", t2-t1)
         
         if plot:
-            if t==nrounds-1:#t%int(nrounds/100)==0:
+            if t%int(nrounds/100)==0: #t==nrounds-1:#
                 print(f"round {t}")
                 if plot_mode=="a":
                     plt.plot(x, F+V*(T+deltaT)/deltaT, color=(t/nrounds,0.8,0))
@@ -369,6 +374,7 @@ def simulate_old(system, T, sigma, omega, deltaT, x, nrounds, threshold, plot=Fa
             plt.axvline(x[lim_ind], linestyle="dotted", color="green")
         else:
             plt.plot(x[lim_ind:-lim_ind], F_norm, color="black", linestyle="dashed")
+
         plt.xlabel("x")
         plt.ylabel("Free energy")
         plt.ylim(-10,15)
